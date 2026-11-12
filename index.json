@@ -7,7 +7,6 @@
     {
       "id": "anti-shake-clipboard",
       "packageName": "com.taobao.taobao",
-      "appName": "淘宝",
       "title": "防摇一摇广告 + 拦截读取剪贴板",
       "description": "禁用运动与高采样率传感器防止开屏摇一摇跳转，并拦截后台偷读剪贴板（保留手动复制功能）。",
       "author": "GraceThings",
@@ -25,7 +24,6 @@
     {
       "id": "gentle-no-shake",
       "packageName": "com.tencent.mm",
-      "appName": "微信",
       "title": "温和防摇一摇与剪贴板偷窥（不影响消息推送）",
       "description": "仅限制运动传感器及可选读取应用列表，不限制后台运行和 WakeLock，保障即时消息接收。",
       "author": "GraceThings",

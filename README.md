@@ -33,7 +33,6 @@ app-oops-rules/
 {
   "id": "anti-shake-clipboard",
   "packageName": "com.taobao.taobao",
-  "appName": "淘宝",
   "title": "拦截摇一摇广告与读剪贴板",
   "description": "禁用加速度计/陀螺仪并拦截读取剪贴板，保留写入剪贴板。",
   "author": "GraceThings",
