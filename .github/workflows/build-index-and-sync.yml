@@ -1,0 +1,90 @@
+name: Build Index & Mirror to Gitee
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-sync:
+    if: "!contains(github.event.head_commit.message, '[skip index]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild index.json from rules directory
+        run: |
+          python3 - << 'EOF'
+          import json, os
+          from datetime import date
+
+          entries = []
+          if os.path.isdir("rules"):
+              for pkg in sorted(os.listdir("rules")):
+                  pkg_dir = os.path.join("rules", pkg)
+                  if not os.path.isdir(pkg_dir):
+                      continue
+                  for fn in sorted(os.listdir(pkg_dir)):
+                      if not fn.endswith(".json"):
+                          continue
+                      rel_path = f"rules/{pkg}/{fn}"
+                      with open(rel_path, "r", encoding="utf-8") as f:
+                          data = json.load(f)
+                      entries.append({
+                          "id": data.get("id", fn[:-5]),
+                          "packageName": data.get("packageName", pkg),
+                          "title": data.get("title", "Community Preset"),
+                          "description": data.get("description", ""),
+                          "author": data.get("author", "Community"),
+                          "level": data.get("level", "balanced"),
+                          "recommended": bool(data.get("recommended", False)),
+                          "updatedAt": data.get("updatedAt", ""),
+                          "path": rel_path,
+                          "ops": data.get("ops", {}),
+                      })
+
+          entries.sort(
+              key=lambda r: (
+                  0 if r["recommended"] else 1,
+                  r["packageName"].lower(),
+                  r["updatedAt"],
+                  r["title"].lower(),
+              )
+          )
+
+          index_doc = {
+              "name": "App Oops Official Rules",
+              "repoUrl": "https://github.com/GraceThings/app-oops-rules",
+              "version": 1,
+              "updatedAt": date.today().isoformat(),
+              "rules": entries,
+          }
+
+          with open("index.json", "w", encoding="utf-8") as f:
+              json.dump(index_doc, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+          print(f"Generated index.json with {len(entries)} rules.")
+          EOF
+
+      - name: Commit updated index.json if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: rebuild index.json [skip index]"
+            git push origin main
+          fi
+
+      - name: Mirror repository to Gitee
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/GraceThings/app-oops-rules.git"
+          git push --force gitee HEAD:main
