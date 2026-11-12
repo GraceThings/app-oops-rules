@@ -1,0 +1,179 @@
+name: Issue to Rule PR
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  convert-issue-to-pr:
+    if: contains(github.event.issue.labels.*.name, 'rule-submission')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse and validate submitted rule JSON
+        id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+        run: |
+          python3 - << 'EOF'
+          import json, os, re, sys
+          from datetime import date
+
+          ALLOWED_OPS = {
+              "BODY_SENSORS",
+              "BODY_SENSORS_BACKGROUND",
+              "HIGH_SAMPLING_RATE_SENSORS",
+              "ACTIVITY_RECOGNITION",
+              "READ_CLIPBOARD",
+              "WRITE_CLIPBOARD",
+              "QUERY_ALL_PACKAGES",
+              "GET_USAGE_STATS",
+              "RUN_IN_BACKGROUND",
+              "RUN_ANY_IN_BACKGROUND",
+              "WAKE_LOCK",
+              "SYSTEM_ALERT_WINDOW",
+              "WRITE_SETTINGS",
+              "ACCESS_NOTIFICATIONS",
+          }
+          ALLOWED_MODES = {"ALLOW", "IGNORE", "DENY", "DEFAULT"}
+          ALLOWED_LEVELS = {"gentle", "balanced", "strict"}
+          PKG_RE = re.compile(r"^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$")
+          ID_RE = re.compile(r"^[a-z0-9._-]+$")
+
+          body = os.environ.get("ISSUE_BODY", "")
+          gh_author = os.environ.get("ISSUE_AUTHOR", "community")
+
+          # Extract either fenced ```json ... ``` block or first balanced JSON object
+          json_str = None
+          fenced = re.search(r"```json\s*(\{.*?\})\s*```", body, re.DOTALL | re.IGNORECASE)
+          if fenced:
+              json_str = fenced.group(1)
+          else:
+              decoder = json.JSONDecoder()
+              idx = body.find("{")
+              while idx != -1:
+                  try:
+                      obj, end = decoder.raw_decode(body[idx:])
+                      if isinstance(obj, dict) and "packageName" in obj:
+                          json_str = body[idx:idx + end]
+                          break
+                  except Exception:
+                      pass
+                  idx = body.find("{", idx + 1)
+
+          def fail(msg):
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                  out.write(f"valid=false\n")
+                  out.write(f"error={msg}\n")
+              sys.exit(0)
+
+          if not json_str:
+              fail("Could not find a valid JSON block inside the issue body.")
+
+          try:
+              data = json.loads(json_str)
+          except Exception as e:
+              fail(f"Invalid JSON syntax: {e}")
+
+          pkg = str(data.get("packageName", "")).strip()
+          rid = str(data.get("id", "custom-rule")).strip().lower()
+          rid = re.sub(r"[^a-z0-9._-]", "-", rid).strip("-") or "custom-rule"
+          title = str(data.get("title", "")).strip()
+          desc = str(data.get("description", "")).strip()
+          author = str(data.get("author", "")).strip() or gh_author
+          level = str(data.get("level", "balanced")).strip().lower()
+          if level not in ALLOWED_LEVELS:
+              level = "balanced"
+          ops = data.get("ops")
+
+          if not PKG_RE.match(pkg):
+              fail(f"Invalid Android packageName: '{pkg}'")
+          if not ID_RE.match(rid):
+              fail(f"Invalid rule id: '{rid}'")
+          if not title:
+              fail("Rule title cannot be empty.")
+          if not isinstance(ops, dict) or not ops:
+              fail("Rule 'ops' must be a non-empty object.")
+
+          clean_ops = {}
+          for k, v in ops.items():
+              op_name = str(k).strip().upper()
+              mode = str(v).strip().upper()
+              if op_name not in ALLOWED_OPS:
+                  fail(f"Unsupported AppOp key: '{op_name}'")
+              if mode not in ALLOWED_MODES:
+                  fail(f"Unsupported mode '{mode}' for '{op_name}'")
+              clean_ops[op_name] = mode
+
+          normalized = {
+              "id": rid,
+              "packageName": pkg,
+              "title": title,
+              "description": desc,
+              "author": author,
+              "level": level,
+              "recommended": False,
+              "updatedAt": date.today().isoformat(),
+              "ops": clean_ops,
+          }
+
+          target_dir = os.path.join("rules", pkg)
+          os.makedirs(target_dir, exist_ok=True)
+          target_file = f"rules/{pkg}/{rid}.json"
+          with open(target_file, "w", encoding="utf-8") as f:
+              json.dump(normalized, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("valid=true\n")
+              out.write(f"pkg={pkg}\n")
+              out.write(f"rid={rid}\n")
+              out.write(f"file={target_file}\n")
+          EOF
+
+      - name: Comment validation error on Issue
+        if: steps.parse.outputs.valid != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const err = `${{ steps.parse.outputs.error }}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Rule validation failed: \`${err}\`\n\nPlease check the JSON generated by App Oops and edit this issue to re-trigger validation.`
+            });
+
+      - name: Create Pull Request from validated rule
+        if: steps.parse.outputs.valid == 'true'
+        env:
+          PKG: ${{ steps.parse.outputs.pkg }}
+          RID: ${{ steps.parse.outputs.rid }}
+          TARGET_FILE: ${{ steps.parse.outputs.file }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="rule/${PKG}-${RID}-issue-${ISSUE_NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add "$TARGET_FILE"
+          if git diff --cached --quiet; then
+            echo "No changes compared to main."
+            exit 0
+          fi
+          git commit -m "feat(rule): add ${PKG}/${RID} from #${ISSUE_NUMBER}"
+          git push --force origin "$BRANCH"
+          PR_URL=$(gh pr create \
+            --title "feat(rule): ${PKG} (${RID})" \
+            --body "Automatically generated from #${ISSUE_NUMBER}. Closes #${ISSUE_NUMBER}." \
+            --base main \
+            --head "$BRANCH")
+          gh issue comment "$ISSUE_NUMBER" --body "Validated rule and opened Pull Request: $PR_URL"
