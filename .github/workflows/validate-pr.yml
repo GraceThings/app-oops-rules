@@ -1,0 +1,100 @@
+name: Validate Rule PRs
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "rules/**"
+      - "index.json"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate rule files and whitelist
+        run: |
+          python3 - << 'EOF'
+          import json, os, re, subprocess, sys
+
+          ALLOWED_OPS = {
+              "BODY_SENSORS",
+              "BODY_SENSORS_BACKGROUND",
+              "HIGH_SAMPLING_RATE_SENSORS",
+              "ACTIVITY_RECOGNITION",
+              "READ_CLIPBOARD",
+              "WRITE_CLIPBOARD",
+              "QUERY_ALL_PACKAGES",
+              "GET_USAGE_STATS",
+              "RUN_IN_BACKGROUND",
+              "RUN_ANY_IN_BACKGROUND",
+              "WAKE_LOCK",
+              "SYSTEM_ALERT_WINDOW",
+              "WRITE_SETTINGS",
+              "ACCESS_NOTIFICATIONS",
+          }
+          ALLOWED_MODES = {"ALLOW", "IGNORE", "DENY", "DEFAULT"}
+          ALLOWED_LEVELS = {"gentle", "balanced", "strict"}
+          PKG_RE = re.compile(r"^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$")
+          ID_RE = re.compile(r"^[a-z0-9._-]+$")
+
+          base_ref = os.environ.get("GITHUB_BASE_REF", "main")
+          diff = subprocess.check_output(
+              ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"], text=True
+          ).splitlines()
+
+          if "index.json" in diff:
+              print("ERROR: Do not modify index.json directly in a PR; it is auto-generated on merge.")
+              sys.exit(1)
+
+          errors = []
+          for root, _, files in os.walk("rules"):
+              for fn in files:
+                  full_path = os.path.join(root, fn).replace("\\", "/")
+                  if not fn.endswith(".json"):
+                      errors.append(f"{full_path}: Non-JSON file in rules/ is not allowed")
+                      continue
+                  parts = full_path.split("/")
+                  if len(parts) != 3 or parts[0] != "rules":
+                      errors.append(f"{full_path}: Must follow rules/<packageName>/<rule-id>.json")
+                      continue
+                  dir_pkg, file_stem = parts[1], fn[:-5]
+                  try:
+                      with open(full_path, "r", encoding="utf-8") as f:
+                          data = json.load(f)
+                  except Exception as e:
+                      errors.append(f"{full_path}: Invalid JSON ({e})")
+                      continue
+
+                  pkg = data.get("packageName", "")
+                  rid = data.get("id", "")
+                  title = str(data.get("title", "")).strip()
+                  level = str(data.get("level", "balanced")).lower()
+                  ops = data.get("ops")
+
+                  if not PKG_RE.match(pkg) or pkg != dir_pkg:
+                      errors.append(f"{full_path}: packageName '{pkg}' invalid or does not match directory '{dir_pkg}'")
+                  if not ID_RE.match(rid) or rid != file_stem:
+                      errors.append(f"{full_path}: id '{rid}' invalid or does not match filename '{file_stem}'")
+                  if not title:
+                      errors.append(f"{full_path}: title is required")
+                  if level not in ALLOWED_LEVELS:
+                      errors.append(f"{full_path}: level '{level}' must be one of {ALLOWED_LEVELS}")
+                  if not isinstance(ops, dict) or not ops:
+                      errors.append(f"{full_path}: ops must be a non-empty object")
+                  else:
+                      for op_name, mode in ops.items():
+                          if op_name not in ALLOWED_OPS:
+                              errors.append(f"{full_path}: unsupported op '{op_name}'")
+                          if str(mode).upper() not in ALLOWED_MODES:
+                              errors.append(f"{full_path}: unsupported mode '{mode}' for '{op_name}'")
+
+          if errors:
+              print("\n".join(errors))
+              sys.exit(1)
+
+          print("All rule files passed validation.")
+          EOF
