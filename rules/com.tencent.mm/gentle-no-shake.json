@@ -1,0 +1,16 @@
+{
+  "id": "gentle-no-shake",
+  "packageName": "com.tencent.mm",
+  "appName": "微信",
+  "title": "温和防摇一摇与剪贴板偷窥（不影响消息推送）",
+  "description": "仅限制运动传感器及可选读取应用列表，不限制后台运行和 WakeLock，保障即时消息接收。",
+  "author": "GraceThings",
+  "level": "gentle",
+  "recommended": true,
+  "updatedAt": "2026-11-12",
+  "ops": {
+    "BODY_SENSORS": "IGNORE",
+    "HIGH_SAMPLING_RATE_SENSORS": "IGNORE",
+    "QUERY_ALL_PACKAGES": "IGNORE"
+  }
+}
