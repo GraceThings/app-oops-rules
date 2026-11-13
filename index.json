@@ -2,7 +2,7 @@
   "name": "App Oops Official Rules",
   "repoUrl": "https://github.com/GraceThings/app-oops-rules",
   "version": 1,
-  "updatedAt": "2026-11-12",
+  "updatedAt": "2026-11-13",
   "rules": [
     {
       "id": "anti-shake-clipboard",
