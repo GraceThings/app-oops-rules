@@ -77,6 +77,8 @@ jobs:
 
                   if not PKG_RE.match(pkg) or pkg != dir_pkg:
                       errors.append(f"{full_path}: packageName '{pkg}' invalid or does not match directory '{dir_pkg}'")
+                  if "appName" in data:
+                      errors.append(f"{full_path}: 'appName' is not allowed in rule JSON (app names are resolved locally on device)")
                   if not ID_RE.match(rid) or rid != file_stem:
                       errors.append(f"{full_path}: id '{rid}' invalid or does not match filename '{file_stem}'")
                   if not title:
