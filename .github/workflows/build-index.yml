@@ -1,4 +1,4 @@
-name: Build Index & Mirror to Gitee
+name: Build Rule Index
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-and-sync:
+  build-index:
     if: "!contains(github.event.head_commit.message, '[skip index]')"
     runs-on: ubuntu-latest
     steps:
@@ -80,11 +80,3 @@ jobs:
             git commit -m "chore: rebuild index.json [skip index]"
             git push origin main
           fi
-
-      - name: Mirror repository to Gitee
-        if: ${{ secrets.GITEE_TOKEN != '' }}
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: |
-          git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/GraceThings/app-oops-rules.git"
-          git push --force gitee HEAD:main
