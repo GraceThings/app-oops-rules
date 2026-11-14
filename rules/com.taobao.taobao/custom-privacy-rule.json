@@ -1,0 +1,20 @@
+{
+  "id": "custom-privacy-rule",
+  "packageName": "com.taobao.taobao",
+  "title": "Reject all except writing clipboard",
+  "description": "",
+  "author": "Grace Chan",
+  "level": "strict",
+  "recommended": false,
+  "updatedAt": "2026-11-14",
+  "ops": {
+    "QUERY_ALL_PACKAGES": "IGNORE",
+    "WAKE_LOCK": "ALLOW",
+    "ACTIVITY_RECOGNITION": "ALLOW",
+    "READ_CLIPBOARD": "IGNORE",
+    "BODY_SENSORS_BACKGROUND": "IGNORE",
+    "HIGH_SAMPLING_RATE_SENSORS": "IGNORE",
+    "WRITE_CLIPBOARD": "ALLOW",
+    "BODY_SENSORS": "ALLOW"
+  }
+}
